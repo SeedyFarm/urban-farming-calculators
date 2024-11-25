@@ -4,81 +4,94 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-// Define the seed calculation function
+// Function to calculate seeds needed
 function calculate_seeds_needed( $area, $plant_type ) {
-	// Placeholder metrics data
 	$metrics = [
-		'tomato' => [
-			'seed_spacing' => 0.5,  // Spacing in meters between seeds
-		],
-		'lettuce' => [
-			'seed_spacing' => 0.25, // Spacing in meters between seeds
-		],
-		'carrot' => [
-			'seed_spacing' => 0.1,  // Spacing in meters between seeds
-		],
-		'spinach' => [
-			'seed_spacing' => 0.2,  // Spacing in meters between seeds
-		],
+		'tomato' => 0.5,
+		'lettuce' => 0.25,
+		'carrot' => 0.1,
+		'spinach' => 0.2,
 	];
 
-	// Check if the plant type is available in the metrics
-	if ( ! array_key_exists( $plant_type, $metrics ) ) {
-		return 'Invalid plant type.';
+	if ( isset( $metrics[ $plant_type ] ) ) {
+		return ceil( $area / ($metrics[ $plant_type ] ** 2) );
 	}
 
-	// Calculate the number of seeds needed
-	$seed_spacing = $metrics[ $plant_type ]['seed_spacing'];
-	$seeds_needed = ceil( $area / ( $seed_spacing * $seed_spacing ) );
-
-	return $seeds_needed;
+	return 'Invalid plant type.';
 }
 
-// Create the shortcode for the seed calculator form
+// AJAX handler for seed calculation
+function ufc_calculate_seeds_ajax() {
+	$area = floatval( $_POST['area'] );
+	$unit = sanitize_text_field( $_POST['unit'] );
+	$plant_type = sanitize_text_field( $_POST['plant_type'] );
+	$area = ( $unit === 'us' ) ? $area * 0.092903 : $area;
+	$seeds_needed = calculate_seeds_needed( $area, $plant_type );
+
+	wp_send_json( [
+		'seeds_needed' => $seeds_needed,
+	] );
+
+	wp_die();
+}
+add_action( 'wp_ajax_calculate_seeds', 'ufc_calculate_seeds_ajax' );
+add_action( 'wp_ajax_nopriv_calculate_seeds', 'ufc_calculate_seeds_ajax' );
+
+// Shortcode for the seed calculator form
 function ufc_seed_calculator_shortcode() {
-	if ( isset( $_POST['ufc_calculate_seeds'] ) ) {
-		$area = floatval( $_POST['ufc_area'] );
-		$unit = sanitize_text_field( $_POST['ufc_unit'] );
-		$plant_type = sanitize_text_field( $_POST['ufc_plant_type'] );
-
-		// Convert area to square meters if the unit is in square feet
-		if ( $unit === 'us' ) {
-			$area = $area * 0.092903; // 1 square foot = 0.092903 square meters
-		}
-
-		$seeds_needed = calculate_seeds_needed( $area, $plant_type );
-	}
+	$seed_types = [
+		'tomato'    => 'Tomato',
+		'lettuce'   => 'Lettuce',
+		'carrot'    => 'Carrot',
+		'spinach'   => 'Spinach',
+	];
 
 	ob_start();
 	?>
 	<div id="ufc-seed-calculator">
 		<h3>Urban Farming Seed Calculator</h3>
-		<form method="post">
+		<form id="ufc-seed-calculator-form">
 			<label for="ufc-plant-type">Select Plant Type:</label>
-			<select id="ufc-plant-type" name="ufc_plant_type">
-				<option value="tomato" <?php echo isset( $plant_type ) && $plant_type === 'tomato' ? 'selected' : ''; ?>>Tomato</option>
-				<option value="lettuce" <?php echo isset( $plant_type ) && $plant_type === 'lettuce' ? 'selected' : ''; ?>>Lettuce</option>
-				<option value="carrot" <?php echo isset( $plant_type ) && $plant_type === 'carrot' ? 'selected' : ''; ?>>Carrot</option>
-				<option value="spinach" <?php echo isset( $plant_type ) && $plant_type === 'spinach' ? 'selected' : ''; ?>>Spinach</option>
+			<select id="ufc-plant-type" name="plant_type">
+				<?php foreach ( $seed_types as $type => $label ) : ?>
+					<option value="<?php echo esc_attr( $type ); ?>"><?php echo esc_html( $label ); ?></option>
+				<?php endforeach; ?>
 			</select>
 			<br><br>
-			<label for="ufc-unit">Select Measurement Unit:</label>
-			<select id="ufc-unit" name="ufc_unit">
-				<option value="metric" <?php echo isset( $unit ) && $unit === 'metric' ? 'selected' : ''; ?>>Metric (sq.m)</option>
-				<option value="us" <?php echo isset( $unit ) && $unit === 'us' ? 'selected' : ''; ?>>U.S. (sq.ft)</option>
-			</select>
+			<label>Select Measurement Unit:</label><br>
+			<input type="radio" id="ufc-unit-metric" name="unit" value="metric" checked>
+			<label for="ufc-unit-metric">Metric</label><br>
+			<input type="radio" id="ufc-unit-us" name="unit" value="us">
+			<label for="ufc-unit-us">US</label>
 			<br><br>
 			<label for="ufc-area">Enter Area Size:</label>
-			<input type="number" id="ufc-area" name="ufc_area" min="0" step="0.1" value="<?php echo isset( $area ) ? esc_attr( $area ) : ''; ?>" required>
+			<input type="number" id="ufc-area" name="area" min="0" step="0.1" required>
 			<br><br>
-			<button type="submit" name="ufc_calculate_seeds">Calculate</button>
+			<button type="button" id="ufc-calculate-button">Calculate</button>
 		</form>
-		<?php if ( isset( $seeds_needed ) ) : ?>
-			<div id="ufc-result">
-				<p>Seeds Needed: <strong><?php echo esc_html( $seeds_needed ); ?></strong></p>
-			</div>
-		<?php endif; ?>
+		<div id="ufc-result" style="margin-top: 20px;"></div>
 	</div>
+
+	<script type="text/javascript">
+		jQuery(document).ready(function($) {
+			$('#ufc-calculate-button').on('click', function() {
+				var formData = {
+					action: 'calculate_seeds',
+					plant_type: $('#ufc-plant-type').val(),
+					unit: $('input[name="unit"]:checked').val(),
+					area: $('#ufc-area').val()
+				};
+
+				$.post('<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>', formData, function(response) {
+					if (response.seeds_needed !== undefined) {
+						$('#ufc-result').html('<p>Seeds Needed: <strong>' + response.seeds_needed + '</strong></p>');
+					} else {
+						$('#ufc-result').html('<p>Error calculating seeds. Please try again.</p>');
+					}
+				});
+			});
+		});
+	</script>
 	<?php
 	return ob_get_clean();
 }
