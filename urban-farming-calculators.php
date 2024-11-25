@@ -2,7 +2,7 @@
 /*
 Plugin Name: Urban Farming Calculators
 Description: A plugin that calculates the number of seeds needed for urban farming based on predefined metrics.
-Version: 1.0
+Version: 1.0.1
 Author: Your Name
 */
 
