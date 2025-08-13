@@ -15,14 +15,35 @@ if ( ! defined( 'ABSPATH' ) ) {
 define( 'UFC_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'UFC_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 
-// Enqueue styles and scripts only on pages using the shortcode
-function ufc_enqueue_scripts() {
-	if ( is_singular() && has_shortcode( get_post()->post_content, 'seed_calculators' ) ) {
-		wp_enqueue_style( 'ufc-styles', UFC_PLUGIN_URL . 'css/style.css', array(), '1.0' );
-		wp_enqueue_script( 'ufc-scripts', UFC_PLUGIN_URL . 'js/script.js', array( 'jquery' ), '1.0', true );
-	}
-}
-add_action( 'wp_enqueue_scripts', 'ufc_enqueue_scripts' );
+final class Urban_Farming_Calculators {
+    private static $instance;
 
-// Include the seed calculator functionality
-require_once UFC_PLUGIN_DIR . 'seed-calculators.php';
+    public static function get_instance() {
+        if ( ! isset( self::$instance ) ) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    private function __construct() {
+        $this->includes();
+        add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_scripts' ) );
+    }
+
+    private function includes() {
+        require_once UFC_PLUGIN_DIR . 'seed-calculators.php';
+    }
+
+    public function enqueue_scripts() {
+        if ( is_singular() && has_shortcode( get_post()->post_content, 'seed_calculators' ) ) {
+            wp_enqueue_style( 'ufc-styles', UFC_PLUGIN_URL . 'css/style.css', array(), '1.0' );
+            wp_enqueue_script( 'ufc-main-script', UFC_PLUGIN_URL . 'js/main.js', array( 'jquery' ), '1.0', true );
+
+            wp_localize_script( 'ufc-main-script', 'ufc_ajax', array(
+                'ajax_url' => admin_url( 'admin-ajax.php' ),
+            ) );
+        }
+    }
+}
+
+Urban_Farming_Calculators::get_instance();
