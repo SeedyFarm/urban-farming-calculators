@@ -1,0 +1,20 @@
+{
+  "seed_types": {
+    "tomato": {
+      "label": "Tomato",
+      "metric": 0.5
+    },
+    "lettuce": {
+      "label": "Lettuce",
+      "metric": 0.25
+    },
+    "carrot": {
+      "label": "Carrot",
+      "metric": 0.1
+    },
+    "spinach": {
+      "label": "Spinach",
+      "metric": 0.2
+    }
+  }
+}
