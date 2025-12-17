@@ -29,6 +29,16 @@ final class Urban_Farming_Calculators {
 
 	private static $instance;
 
+	/**
+	 * @var UFC_Data_Loader
+	 */
+	public $data_loader;
+
+	/**
+	 * @var UFC_Calculator_Service
+	 */
+	public $calculator_service;
+
 	public static function get_instance() {
 		if ( ! isset( self::$instance ) ) {
 			self::$instance = new self();
@@ -38,18 +48,23 @@ final class Urban_Farming_Calculators {
 
 	private function __construct() {
 		$this->includes();
+		$this->init_services();
 		$this->init_hooks();
 	}
 
 	private function includes() {
-		require_once UFC_PLUGIN_DIR . 'includes/class-ufc-data.php';
+		require_once UFC_PLUGIN_DIR . 'includes/class-ufc-data-loader.php';
+		require_once UFC_PLUGIN_DIR . 'includes/class-ufc-calculator-service.php';
 		require_once UFC_PLUGIN_DIR . 'includes/class-ufc-calculators.php';
 
-		// --- NEW: Conditionally load admin class ---
-		// Only load the admin class if we are in the admin area.
 		if ( is_admin() ) {
 			require_once UFC_PLUGIN_DIR . 'includes/class-ufc-admin.php';
 		}
+	}
+
+	private function init_services() {
+		$this->data_loader        = new UFC_Data_Loader();
+		$this->calculator_service = new UFC_Calculator_Service( $this->data_loader );
 	}
 
 	private function init_hooks() {
@@ -57,17 +72,21 @@ final class Urban_Farming_Calculators {
 		register_activation_hook( __FILE__, array( $this, 'activate' ) );
 
 		// Instantiate the calculators class to register shortcodes and AJAX hooks.
-		new UFC_Calculators();
+		// Pass dependencies.
+		new UFC_Calculators( $this->data_loader, $this->calculator_service );
 
-		// --- NEW: Conditionally instantiate admin class ---
 		if ( is_admin() ) {
-			new UFC_Admin();
+			new UFC_Admin( $this->data_loader );
 		}
 	}
 
 	public function activate() {
 		// Clear the data transient on activation to ensure fresh data.
-		delete_transient( 'ufc_all_seeds_data' );
+		// We use the constant from the class since we might not have the instance readily available in a static context hook if we were using static methods,
+		// but here we are in a singleton instance method so we could access $this->data_loader if init_services() ran.
+		// However, activation hook often runs in a separate process or early.
+		// Safer to just delete the transient using the constant.
+		delete_transient( UFC_Data_Loader::TRANSIENT_KEY );
 	}
 
 	public function enqueue_scripts() {

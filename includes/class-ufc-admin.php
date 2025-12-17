@@ -13,6 +13,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 class UFC_Admin {
 
 	/**
+	 * Data loader instance.
+	 *
+	 * @var UFC_Data_Loader
+	 */
+	private $data_loader;
+
+	/**
 	 * The hook suffix for the settings page.
 	 *
 	 * @var string
@@ -21,8 +28,11 @@ class UFC_Admin {
 
 	/**
 	 * Constructor. Hooks into WordPress.
+	 *
+	 * @param UFC_Data_Loader $data_loader The data loader.
 	 */
-	public function __construct() {
+	public function __construct( $data_loader ) {
+		$this->data_loader = $data_loader;
 		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
 		add_action( 'admin_init', array( $this, 'handle_clear_cache_action' ) );
 	}
@@ -91,7 +101,7 @@ class UFC_Admin {
 		}
 
 		// 4. Perform the action: Delete the transient.
-		delete_transient( 'ufc_all_seeds_data' );
+		$this->data_loader->clear_cache();
 
 		// 5. Provide feedback to the user.
 		add_settings_error(
