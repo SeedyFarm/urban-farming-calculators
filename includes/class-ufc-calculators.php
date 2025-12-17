@@ -12,7 +12,30 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class UFC_Calculators {
 
-	public function __construct() {
+	/**
+	 * Data loader instance.
+	 *
+	 * @var UFC_Data_Loader
+	 */
+	private $data_loader;
+
+	/**
+	 * Calculator service instance.
+	 *
+	 * @var UFC_Calculator_Service
+	 */
+	private $calculator_service;
+
+	/**
+	 * Constructor.
+	 *
+	 * @param UFC_Data_Loader        $data_loader        The data loader.
+	 * @param UFC_Calculator_Service $calculator_service The calculator service.
+	 */
+	public function __construct( $data_loader, $calculator_service ) {
+		$this->data_loader = $data_loader;
+		$this->calculator_service = $calculator_service;
+
 		add_shortcode( 'seed_calculator', array( $this, 'render_seed_calculator' ) );
 		add_shortcode( 'mulch_calculator', array( $this, 'render_mulch_calculator' ) );
 
@@ -39,7 +62,7 @@ class UFC_Calculators {
 			wp_send_json_success( array() );
 		}
 
-		$results = UFC_Data::search_seeds_by_name( $search_term );
+		$results = $this->data_loader->search_seeds_by_name( $search_term );
 		wp_send_json_success( $results );
 	}
 
@@ -57,7 +80,7 @@ class UFC_Calculators {
 			$area *= 0.092903; // Convert sq ft to sq meters.
 		}
 
-		$calculation = $this->calculate_seeds_needed( $area, $plant_type );
+		$calculation = $this->calculator_service->calculate_seeds_needed( $area, $plant_type );
 
 		if ( is_wp_error( $calculation ) ) {
 			wp_send_json_error(
@@ -71,7 +94,7 @@ class UFC_Calculators {
 				'seed-calculator-results.php',
 				array(
 					'seeds_needed' => $calculation['seeds_needed'],
-					'grams_needed' => $calculation['grams_needed'], // Pass the new data.
+					'grams_needed' => $calculation['grams_needed'],
 					'seed_data'    => $calculation['seed_data'],
 				)
 			);
@@ -88,7 +111,8 @@ class UFC_Calculators {
 		$area         = isset( $_POST['area'] ) ? floatval( $_POST['area'] ) : 0;
 		$depth        = isset( $_POST['depth'] ) ? floatval( $_POST['depth'] ) : 0;
 		$unit         = isset( $_POST['unit'] ) ? sanitize_key( $_POST['unit'] ) : 'metric';
-		$mulch_needed = $this->calculate_mulch_needed( $area, $depth, $unit );
+
+		$mulch_needed = $this->calculator_service->calculate_mulch_needed( $area, $depth, $unit );
 
 		if ( is_wp_error( $mulch_needed ) ) {
 			wp_send_json_error(
@@ -97,7 +121,10 @@ class UFC_Calculators {
 				)
 			);
 		} else {
-			$html = '<div class="ufc-result ufc-success">' . esc_html( $mulch_needed ) . '</div>';
+			$html = $this->get_template_html(
+				'mulch-calculator-results.php',
+				array( 'mulch_needed' => $mulch_needed )
+			);
 			wp_send_json_success( array( 'html' => $html ) );
 		}
 	}
@@ -137,86 +164,5 @@ class UFC_Calculators {
 		ob_start();
 		include $template_path;
 		return ob_get_clean();
-	}
-
-	/**
-	 * Calculates the number and weight of seeds needed.
-	 *
-	 * @return array|WP_Error An array with 'seeds_needed', 'grams_needed', and 'seed_data' on success, or WP_Error on failure.
-	 */
-	private function calculate_seeds_needed( $area, $plant_type ) {
-		$all_seeds = UFC_Data::get_all_seeds();
-
-		if ( ! isset( $all_seeds[ $plant_type ] ) ) {
-			return new WP_Error(
-				'invalid_plant_type',
-				esc_html__( 'Invalid plant type selected.', 'urban-farming-calculators' )
-			);
-		}
-
-		if ( $area <= 0 ) {
-			return new WP_Error(
-				'invalid_area',
-				esc_html__( 'Area must be greater than zero.', 'urban-farming-calculators' )
-			);
-		}
-
-		$seed_data  = $all_seeds[ $plant_type ];
-		$spacing_cm = isset( $seed_data['plant_spacing_cm'] ) ? (float) $seed_data['plant_spacing_cm'] : 0;
-
-		if ( $spacing_cm <= 0 ) {
-			return new WP_Error(
-				'invalid_spacing_data',
-				esc_html__( 'Plant spacing data is invalid.', 'urban-farming-calculators' )
-			);
-		}
-		$spacing_m    = $spacing_cm / 100;
-		$seeds_needed = ceil( $area / $spacing_m ** 2 );
-		$grams_needed = null;
-
-		// --- NEW: Calculate grams if possible ---
-		// Defensively check that the data exists and is not zero to prevent errors.
-		$seeds_per_gram = isset( $seed_data['seeds_per_gram'] ) ? (int) $seed_data['seeds_per_gram'] : 0;
-		if ( $seeds_per_gram > 0 ) {
-			$grams_needed = $seeds_needed / $seeds_per_gram;
-		}
-
-		// Return the full data array, now including the calculated grams.
-		return array(
-			'seeds_needed' => $seeds_needed,
-			'grams_needed' => $grams_needed,
-			'seed_data'    => $seed_data,
-		);
-	}
-
-	/**
-	 * Calculates the volume of mulch needed.
-	 */
-	private function calculate_mulch_needed( $area, $depth, $unit ) {
-		if ( $area <= 0 || $depth <= 0 ) {
-			return new WP_Error(
-				'invalid_dimensions',
-				esc_html__( 'Area and depth must be greater than zero.', 'urban-farming-calculators' )
-			);
-		}
-
-		if ( 'metric' === $unit ) {
-			$volume_m3 = $area * ( $depth / 100 );
-			return sprintf(
-				esc_html__( '%s cubic meters', 'urban-farming-calculators' ),
-				round( $volume_m3, 2 )
-			);
-		} elseif ( 'us' === $unit ) {
-			$volume_ft3 = $area * ( $depth / 12 );
-			return sprintf(
-				esc_html__( '%s cubic feet', 'urban-farming-calculators' ),
-				round( $volume_ft3, 2 )
-			);
-		}
-
-		return new WP_Error(
-			'invalid_unit',
-			esc_html__( 'Invalid unit selected.', 'urban-farming-calculators' )
-		);
 	}
 }
